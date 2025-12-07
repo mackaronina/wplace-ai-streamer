@@ -2,6 +2,7 @@ import asyncio
 import base64
 import io
 import logging
+import time
 from threading import Thread
 
 import simpleaudio
@@ -9,7 +10,7 @@ import torch
 import torchaudio
 import uvicorn
 from PIL import Image
-from curl_cffi import AsyncSession
+from curl_cffi import Session
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -67,11 +68,10 @@ class Webcam:
             self.hide_element(element)
 
     def say_sound_with_animation(self, grade=GradeEnum.neutral):
-        async def start_with_delay():
-            await asyncio.sleep(0.5)
+        def start_with_delay():
+            time.sleep(0.5)
             self.play_talking_animation(grade)
 
-        asyncio.create_task(start_with_delay())
         Thread(target=start_with_delay).start()
         simpleaudio.WaveObject.from_wave_file('sound/audio.wav').play().wait_done()
         self.stop_talking_animation()
@@ -118,16 +118,16 @@ class WPlaceDriver:
     def add_webcam(self):
         return Webcam(self.driver)
 
-    async def go_to_random_place(self):
+    def go_to_random_place(self):
         self.driver.find_element(By.XPATH, '//button[@title="Search"]').click()
         self.driver.find_element(By.XPATH, '//button[@data-tip="Random place"]').click()
-        await asyncio.sleep(7)
+        time.sleep(7)
         scroll_origin = ScrollOrigin.from_viewport(
             int(self.driver.get_window_size()['width'] / 2),
             int(self.driver.get_window_size()['height'] / 2)
         )
         ActionChains(self.driver).scroll_from_origin(scroll_origin, 0, 400).perform()
-        await asyncio.sleep(1)
+        time.sleep(1)
 
     def quit(self):
         self.driver.quit()
@@ -147,7 +147,7 @@ class SoundModel:
                         bits_per_sample=16)
 
 
-async def generate_with_cloudflare(content: str | list[dict], json_model: type[BaseModel] | None = None):
+def generate_with_cloudflare(content: str | list[dict], json_model: type[BaseModel] | None = None):
     for attempts in range(5):
         try:
             link = f'https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/{CLOUDFLARE_MODEL_NAME}'
@@ -168,17 +168,17 @@ async def generate_with_cloudflare(content: str | list[dict], json_model: type[B
                 'temperature': TEMPERATURE,
                 'guided_json': json_model.model_json_schema() if json_model is not None else None
             }
-            async with AsyncSession() as session:
-                resp = await session.post(link, json=data, headers=headers, impersonate='chrome110', timeout=10)
+            with Session() as session:
+                resp = session.post(link, json=data, headers=headers, impersonate='chrome110', timeout=10)
                 result = resp.json()['result']['response']
                 return json_model.model_validate(result) if json_model is not None else result
         except Exception as e:
-            print(e)
-            await asyncio.sleep(1)
+            logging.error(f'Error with cloudlfare request: {e}', exc_info=True)
+            time.sleep(1)
     return None
 
 
-async def generate_comment_to_screen(base64_image):
+def generate_comment_to_screen(base64_image):
     content = [
         {
             'type': 'text',
@@ -191,64 +191,77 @@ async def generate_comment_to_screen(base64_image):
             }
         }
     ]
-    return await generate_with_cloudflare(content, CommentModel)
+    return generate_with_cloudflare(content, CommentModel)
 
 
-async def generate_greetings_comment():
-    return await generate_with_cloudflare(GREETINGS_PROMPT)
+def generate_greetings_comment():
+    return generate_with_cloudflare(GREETINGS_PROMPT)
 
 
-async def generate_goodbye_comment():
-    return await generate_with_cloudflare(GOODBYE_PROMPT)
+def generate_goodbye_comment():
+    return generate_with_cloudflare(GOODBYE_PROMPT)
 
 
-async def run_server():
-    app = FastAPI()
-    app.mount('/static', StaticFiles(directory='static'), name='static')
-    await uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=8000)).serve()
+class FastAPIServer:
+
+    def __init__(self):
+        self.server = None
+
+    async def run_server(self):
+        app = FastAPI()
+        app.mount('/static', StaticFiles(directory='static'), name='static')
+        logging.info('Starting server...')
+        self.server = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=8000))
+        await self.server.serve()
+
+    def shutdown(self):
+        self.server.should_exit = True
+        self.server.force_exit = True
 
 
-async def say_greetings_text(sound_model, webcam):
-    comment_text = await generate_greetings_comment()
+def say_greetings_text(sound_model, webcam):
+    comment_text = generate_greetings_comment()
     logging.info(f'Greetings text: {comment_text}')
     sound_model.save_text_as_audio(comment_text)
     logging.info('Ready to start stream')
     input('Press enter to start\n')
-    await asyncio.sleep(3)
+    time.sleep(3)
     webcam.say_sound_with_animation()
 
 
-async def say_goodbye_text(sound_model, webcam):
-    comment_text = await generate_goodbye_comment()
+def say_goodbye_text(sound_model, webcam):
+    comment_text = generate_goodbye_comment()
     logging.info(f'Goodbye text: {comment_text}')
     sound_model.save_text_as_audio(comment_text)
     webcam.say_sound_with_animation()
 
 
-async def say_comment_text(sound_model, webcam, screen_base64):
-    comment = await generate_comment_to_screen(screen_base64)
+def say_comment_text(sound_model, webcam, screen_base64):
+    comment = generate_comment_to_screen(screen_base64)
     logging.info(f'Comment to images: {comment.text}')
-    logging.info(f'Grade to images: {comment.grage}')
+    logging.info(f'Grade to images: {comment.grade}')
     sound_model.save_text_as_audio(comment.text)
     webcam.say_sound_with_animation(comment.grade)
 
 
-async def main():
-    asyncio.create_task(run_server())
+def main():
+    server = FastAPIServer()
+    Thread(target=asyncio.run, args=(server.run_server(),)).start()
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     logging.info('Starting stream...')
     sound_model = SoundModel()
     wplace_driver = WPlaceDriver()
     webcam = wplace_driver.add_webcam()
-    await say_greetings_text(sound_model, webcam)
+    say_greetings_text(sound_model, webcam)
     for _ in range(TOTAL_ITERATIONS):
-        await wplace_driver.go_to_random_place()
+        wplace_driver.go_to_random_place()
         screen_base64 = wplace_driver.get_screen()
-        await say_comment_text(sound_model, webcam, screen_base64)
-    await say_goodbye_text(sound_model, webcam)
-    await asyncio.sleep(1)
+        say_comment_text(sound_model, webcam, screen_base64)
+    say_goodbye_text(sound_model, webcam)
+    time.sleep(1)
     wplace_driver.quit()
+    server.shutdown()
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()
