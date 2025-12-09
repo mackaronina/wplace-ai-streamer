@@ -9,7 +9,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.actions.wheel_input import ScrollOrigin
 from selenium.webdriver.common.by import By
 
-from utils.image_webcam import ImageWebcam
+from utils.image_overlay import ImageOverlay
 from utils.selenium_elements import show_element, hide_element
 
 
@@ -48,8 +48,8 @@ class WPlacePOM:
         img_str = base64.b64encode(bio.getvalue()).decode('utf-8')
         return img_str
 
-    def add_webcam(self) -> ImageWebcam:
-        return ImageWebcam(self.driver)
+    def add_overlay(self) -> ImageOverlay:
+        return ImageOverlay(self.driver)
 
     def go_to_random_place(self) -> None:
         self.driver.find_element(By.XPATH, '//button[@title="Search"]').click()
