@@ -22,7 +22,7 @@ class Settings(ConfigBase):
     SERVER_PORT: int = 8000
     AUDIO_CHUNK_SIZE: int = 1024
     STREAM_ITERATIONS: int = 5
-    TORCH_DEVICE: str = 'cuda:0'
+    TORCH_DEVICE: str = 'cpu'
     SILERO_SPEAKER: str = 'eugene'
 
     def get_resource_url(self, file_name: str) -> str:

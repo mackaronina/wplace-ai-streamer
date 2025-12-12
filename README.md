@@ -28,8 +28,7 @@ simulating different moods.
 
 * Make sure ffmpeg is installed on your computer
 * Replace the images in the `static` folder with your own with the same file names
-* Edit file `example.env` and fill it with your data, then rename it to `.env`. This is a file with all the configs. 
-If you don't have a graphics card that supports CUDA, change TORCH_DEVICE to 'cpu'
+* Edit file `example.env` and fill it with your data, then rename it to `.env`. This is a file with all the configs
 * Edit file `prompts.py` and fill it with your data. This file contains templates of all prompts that are sent via the
   Cloudflare API
 * Run the python script with the following commands:  
